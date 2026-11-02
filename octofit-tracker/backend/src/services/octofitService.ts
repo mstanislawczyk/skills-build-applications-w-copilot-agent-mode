@@ -57,8 +57,39 @@ export async function listTeams() {
   return Team.find().lean();
 }
 
-export async function createTeam(_input: unknown) {
-  throw Object.assign(new Error('Team validation is not implemented yet'), { status: 501 });
+export async function createTeam(input: unknown) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw badRequest('Team input must be an object');
+  }
+
+  const { name, mascot, members = [] } = input as Record<string, unknown>;
+  if (
+    typeof name !== 'string' ||
+    !name.trim() ||
+    typeof mascot !== 'string' ||
+    !mascot.trim() ||
+    !Array.isArray(members) ||
+    members.some((member) => typeof member !== 'string' || !/^[a-f\d]{24}$/i.test(member))
+  ) {
+    throw badRequest('Team input is invalid');
+  }
+
+  const memberIds = [...new Set(members as string[])].map((id) => new mongoose.Types.ObjectId(id));
+  if (memberIds.length > 0) {
+    const existingMembers = await User.countDocuments({ _id: { $in: memberIds } });
+    if (existingMembers !== memberIds.length) {
+      throw badRequest('Team members must exist');
+    }
+  }
+
+  try {
+    return await Team.create({ name: name.trim(), mascot: mascot.trim(), members: memberIds });
+  } catch (error) {
+    if (error instanceof mongoose.Error.ValidationError || error instanceof mongoose.Error.CastError) {
+      throw badRequest('Team input is invalid');
+    }
+    throw error;
+  }
 }
 
 export async function getLeaderboard() {
